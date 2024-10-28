@@ -436,6 +436,7 @@ def init_distributed_mode(args):
     # launched with submitit on a slurm cluster
     elif 'SLURM_PROCID' in os.environ:
         args.rank = int(os.environ['SLURM_PROCID'])
+        args.world_size = int(os.environ.get('WORLD_SIZE', 1))
         args.gpu = args.rank % torch.cuda.device_count()
     # launched naively with `python main_dino.py`
     # we manually add MASTER_ADDR and MASTER_PORT to env variables
@@ -715,8 +716,9 @@ def extract_features(model, data_loader, use_cuda=True, use_fp16=False, eval_emb
     metric_logger = MetricLogger(delimiter="  ")
     features = None
     # count = 0
+    print('Starting to extract features')
     for samples, *_, index in metric_logger.log_every(data_loader, 100):
-        # print(f'At the index {index}')
+        print(f'At the index {index}')
         samples = samples.cuda(non_blocking=True)
         index = index.cuda(non_blocking=True)
         if use_fp16:

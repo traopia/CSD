@@ -8,7 +8,7 @@ import sys
 from collections import defaultdict, deque
 import time, datetime
 
-import faiss
+#import faiss
 import numpy as np
 import torch
 import torch.distributed as dist

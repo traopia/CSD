@@ -5,6 +5,8 @@ import numpy as np
 from tqdm import tqdm
 import pickle
 import vaex as vx
+import pandas as pd
+import numpy as np
 
 
 def create_laion_cache(root_dir, anno_dir, keys=['artist', 'medium', 'movement']):
@@ -195,23 +197,60 @@ def create_laion_dedup_cache(dedup_dir):
     return keys, labels, rejects
 
 
+def create_binary_vector(row_strings, label_to_id):
+    """
+    Convert a list/set of strings into a binary vector based on a reference list.
+
+    Parameters:
+    row_strings : str or list-like
+        The strings to encode. Can be a single string, list, or pandas Series element
+    reference_list : list
+        The complete list of strings that defines the vector positions
+
+    Returns:
+    numpy.ndarray : Binary vector of length len(reference_list)
+    """
+    # Create a mapping of strings to their positions
+
+    # Convert input to list if it's a string
+    if isinstance(row_strings, str):
+        row_strings = row_strings.split("_%_")
+    # Handle potential NaN values
+    elif pd.isna(row_strings):
+        row_strings = []
+
+    # Initialize zero vector
+    vector = np.zeros(len(label_to_id), dtype=int)
+
+    # Set 1s at positions of matched strings
+    for s in row_strings:
+        if s in label_to_id:
+            vector[label_to_id[s]] = 1
+
+    return vector
+
+
 class LAIONDedup(Dataset):
     def __init__(self, root_dir, anno_dir, transform=None, model_type='dann', eval_mode=False, artist_mode=False):
         self.root_dir = root_dir
         self.transform = transform
         self.model_type = model_type
 
-        dedup_dir = os.path.join(anno_dir, 'dedup_info')
-        cache_path = os.path.join(dedup_dir, 'joined.cache')
-        if os.path.exists(cache_path):
-            with open(cache_path, 'rb') as tmp:
-                keys, labels, rejects = pickle.load(tmp)
-        else:
-            keys, labels, rejects = create_laion_dedup_cache(dedup_dir)
-
-        keys = np.array(keys)[~rejects]
-        self.pathlist = [os.path.join(root_dir, 'data', key[:5], key + '.jpg') for key in keys]
-        self.labels = labels[~rejects]
+        # dedup_dir = os.path.join(anno_dir, 'dedup_info')
+        # cache_path = os.path.join(dedup_dir, 'joined.cache')
+        # if os.path.exists(cache_path):
+        #     with open(cache_path, 'rb') as tmp:
+        #         keys, labels, rejects = pickle.load(tmp)
+        # else:
+        #     keys, labels, rejects = create_laion_dedup_cache(dedup_dir)
+        #
+        # keys = np.array(keys)[~rejects]
+        data = pd.read_parquet('/fs/nexus-scratch/anubhav/dynamicDistances/data/oldRun_doNotDelete/laion_release_tagged.parquet')
+        label_to_id = pickle.load(open('/fs/nexus-scratch/anubhav/dynamicDistances/data/oldRun_doNotDelete/label_to_id.pkl', 'rb'))
+        # breakpoint()
+        data['labels'] = data['merged_tags'].apply(lambda x: create_binary_vector(x, label_to_id))
+        self.pathlist = [os.path.join(root_dir, 'data', key[:5], key + '.jpg') for key in data['key'].tolist()]
+        self.labels = np.array(data['labels'].tolist())
         self.namelist = list(map(lambda x: x.split('/')[-1], self.pathlist))
 
         if eval_mode:

@@ -210,7 +210,7 @@ def main_worker(gpu, ngpus_per_node, args):
         model = CSD_CLIP(args.arch, args.content_proj_head)
         if has_batchnorms(model):
             model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
+        print('Trying to load checkpoint')
         checkpoint = torch.load(args.model_path, map_location="cpu")
         state_dict = convert_state_dict(checkpoint['model_state_dict'])
         msg = model.load_state_dict(state_dict, strict=False)
@@ -248,7 +248,7 @@ def main_worker(gpu, ngpus_per_node, args):
         model = torch.nn.DataParallel(model).cuda()
 
     cudnn.benchmark = True
-
+    print('I am here')
     # Data loading code
     if args.pt_style == 'clip':  # and args.arch == 'resnet50':
         ret_transform = preprocess

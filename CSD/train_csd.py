@@ -19,14 +19,15 @@ import torch.utils.data
 import torch.utils.data.distributed
 from pathlib import Path
 
-sys.path.insert(0, str(pathlib.Path(__file__).parent.resolve()))
-
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.resolve()))
 from CSD import utils
 from data.wikiart import WikiArtTrain
 from data.laion import LAION, LAIONDedup
 from CSD.loss_utils import ContrastiveTransformations, transforms_branch0, transforms_branch1, transforms_branch2
 from CSD.model import CSD_CLIP
 from CSD.losses import SupConLoss
+
+import wandb
 
 
 def get_args_parser():
@@ -68,7 +69,7 @@ def get_args_parser():
                         0 for disabling.""")
     parser.add_argument("--iters", default=100000, type=int,  # default: eval only
                         help="number of total iterations to run")
-    parser.add_argument("-b", "--batch_size_per_gpu", default=64, type=int,
+    parser.add_argument("-b", "--batch_size_per_gpu", default=32, type=int,
                         help="batch size per GPU (default: 64)")
     parser.add_argument("--lr", "--learning_rate", default=0.003, type=float,
                         help="learning rate", dest="lr",)
@@ -115,8 +116,10 @@ def get_args_parser():
                         help="node rank for distributed training")
     parser.add_argument("--dist_url", default="env://",
                         help="url used to set up distributed training")
-    parser.add_argument("--local_rank", default=0, type=int,
+    parser.add_argument("--local-rank", default=0, type=int,
                         help="Please ignore and do not set this argument.")
+    parser.add_argument('--use_wandb', action="store_true",
+                        help='Path to save logs and checkpoints.')
     return parser
 
 
@@ -151,6 +154,10 @@ def main():
     # ======================= setup logging =======================
     if utils.is_main_process() and args.iters > 0:
         os.makedirs(args.output_dir, exist_ok=True)
+        if args.use_wandb:
+            exp_name = Path(args.output_dir).name
+            wandb.init(project="dann_train", name=exp_name)
+            wandb.config.update(args)
 
     # ======================= preparing data =======================
     if args.lambda_c < 1e-3:
@@ -294,6 +301,8 @@ def main():
     save_dict = None
     print("Running eval before training!")
     val_stats = evaluate(model, vq_loader, vidx_loader, fp16_scaler is not None, args.eval_k, args.eval_embed)
+    if args.use_wandb and utils.is_main_process():
+        wandb.log(val_stats, step=0)
     if start_iter >= args.iters:
         print(f"Start iter {start_iter} >= Max iters {args.iters} training!")
         return
@@ -437,6 +446,8 @@ def main():
                     'iter': iter+1}
 
         if utils.is_main_process() and (iter+1) % args.print_freq == 0:
+            if args.use_wandb:
+                wandb.log(train_stats, step=iter + 1)
             with (Path(args.output_dir) / "log.txt").open("a") as f:
                 f.write(json.dumps(log_stats) + "\n")
 
@@ -447,6 +458,8 @@ def main():
             print("Averaged stats:", metric_logger)
 
             val_stats = evaluate(model, vq_loader, vidx_loader, fp16_scaler is not None, args.eval_k, args.eval_embed)
+            if args.use_wandb and utils.is_main_process():
+                wandb.log(val_stats, step=iter + 1)
 
     if args.iters > 0 and save_dict is not None:
         utils.save_on_master(save_dict, os.path.join(args.output_dir, 'checkpoint.pth'))
